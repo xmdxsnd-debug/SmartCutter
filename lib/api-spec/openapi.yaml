@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: smartcutter
+    description: SmartCutter video synchronization jobs
 paths:
   /healthz:
     get:
@@ -24,7 +26,152 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /smartcutter/status:
+    get:
+      operationId: getSmartCutterStatus
+      tags: [smartcutter]
+      summary: Check processing capabilities
+      responses:
+        "200":
+          description: Current processing capabilities
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SmartCutterStatus"
+  /smartcutter/analyze:
+    post:
+      operationId: analyzeSmartCutterJob
+      tags: [smartcutter]
+      summary: Analyze an audio file, timestamped script, and ordered images
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/SmartCutterAnalyzeInput"
+      responses:
+        "202":
+          description: Analysis job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SmartCutterJob"
+        "400":
+          description: Invalid upload or missing input
+  /smartcutter/jobs/{jobId}:
+    get:
+      operationId: getSmartCutterJob
+      tags: [smartcutter]
+      summary: Read analysis or render progress
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: Job state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SmartCutterJob"
+        "404":
+          description: Job not found
+  /smartcutter/jobs/{jobId}/timeline/{lineId}:
+    patch:
+      operationId: updateSmartCutterTimelineLine
+      tags: [smartcutter]
+      summary: Manually correct a timeline row
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+        - $ref: "#/components/parameters/LineId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SmartCutterTimelineUpdate"
+      responses:
+        "200":
+          description: Updated job state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SmartCutterJob"
+  /smartcutter/jobs/{jobId}/timeline/{lineId}/realign:
+    post:
+      operationId: realignSmartCutterTimelineLine
+      tags: [smartcutter]
+      summary: Re-run alignment for one timeline row
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+        - $ref: "#/components/parameters/LineId"
+      responses:
+        "202":
+          description: Re-alignment accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SmartCutterJob"
+  /smartcutter/jobs/{jobId}/render:
+    post:
+      operationId: renderSmartCutterJob
+      tags: [smartcutter]
+      summary: Render the reviewed timeline as an MP4
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "202":
+          description: Render job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SmartCutterJob"
+  /smartcutter/jobs/{jobId}/download:
+    get:
+      operationId: downloadSmartCutterVideo
+      tags: [smartcutter]
+      summary: Download the rendered MP4
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: Rendered video
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+        "409":
+          description: Video is not ready
+  /smartcutter/jobs/{jobId}/preview:
+    get:
+      operationId: previewSmartCutterVideo
+      tags: [smartcutter]
+      summary: Stream the rendered MP4 for browser preview
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: Streamable rendered video
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+        "409":
+          description: Video is not ready
 components:
+  parameters:
+    JobId:
+      name: jobId
+      in: path
+      required: true
+      schema:
+        type: string
+    LineId:
+      name: lineId
+      in: path
+      required: true
+      schema:
+        type: number
   schemas:
     HealthStatus:
       type: object
@@ -33,4 +180,95 @@ components:
           type: string
       required:
         - status
+    SmartCutterStatus:
+      type: object
+      required: [status, ffmpegAvailable, alignmentMode]
+      properties:
+        status:
+          type: string
+        ffmpegAvailable:
+          type: boolean
+        alignmentMode:
+          type: string
+        whisperXAvailable:
+          type: boolean
+    SmartCutterAnalyzeInput:
+      type: object
+      required: [audio, script, images]
+      properties:
+        audio:
+          type: string
+        script:
+          type: string
+        images:
+          type: array
+          items:
+            type: string
+    SmartCutterTimelineLine:
+      type: object
+      required: [id, imageName, imageUrl, start, end, hint, text, confidence, needsReview]
+      properties:
+        id:
+          type: number
+        imageName:
+          type: string
+        imageUrl:
+          type: string
+        start:
+          type: number
+        end:
+          type: number
+        hint:
+          type: number
+        text:
+          type: string
+        confidence:
+          type: number
+        needsReview:
+          type: boolean
+        alignmentSource:
+          type: string
+    SmartCutterJob:
+      type: object
+      required: [id, status, progress, progressLabel, duration, scriptLineCount, imageCount, timeline, errors]
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [queued, analyzing, ready, rendering, complete, error]
+        progress:
+          type: number
+        progressLabel:
+          type: string
+        duration:
+          type: number
+        scriptLineCount:
+          type: number
+        imageCount:
+          type: number
+        audioName:
+          type: string
+        timeline:
+          type: array
+          items:
+            $ref: "#/components/schemas/SmartCutterTimelineLine"
+        videoUrl:
+          type: ["string", "null"]
+        errors:
+          type: array
+          items:
+            type: string
+    SmartCutterTimelineUpdate:
+      type: object
+      properties:
+        start:
+          type: number
+          minimum: 0
+        end:
+          type: number
+          minimum: 0
+        imageIndex:
+          type: number
+          minimum: 0
 

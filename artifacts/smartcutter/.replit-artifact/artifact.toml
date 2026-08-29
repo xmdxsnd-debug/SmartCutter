@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "SmartCutter"
+description = "A focused creator tool that turns a voice-over, timestamped script, and ordered still images into a precisely synchronized 1080p MP4 video."
+version = "1.0.0"
+id = "artifacts/smartcutter"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 19579
+
+[services.development]
+run = "pnpm --filter @workspace/smartcutter run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/smartcutter", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/smartcutter/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "19579"
+BASE_PATH = "/"

@@ -1,0 +1,1 @@
+- [SmartCutter alignment confidence](smartcutter-alignment.md) — Waveform fallback is approximate; low-confidence rows must remain reviewable and block export.
