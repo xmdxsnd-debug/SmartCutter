@@ -6,6 +6,7 @@ import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
 import { logger } from "../lib/logger";
+import { checkWhisperXHealth, transcribeWithWhisperX } from "../lib/whisperx-client";
 
 const execFileAsync = promisify(execFile);
 const router: IRouter = Router();
@@ -159,18 +160,6 @@ async function probeDuration(audioPath: string) {
   return duration;
 }
 
-async function detectSpeechStarts(audioPath: string) {
-  try {
-    const result = await execFileAsync("ffmpeg", [
-      "-hide_banner", "-i", audioPath, "-af", "silencedetect=noise=-35dB:d=0.18", "-f", "null", "-",
-    ], { maxBuffer: 2 * 1024 * 1024 });
-    const starts = [...result.stderr.matchAll(/silence_end:\s*([0-9.]+)/g)].map((match) => Number(match[1]));
-    return [0, ...starts].filter((value, index, values) => Number.isFinite(value) && values.indexOf(value) === index).sort((a, b) => a - b);
-  } catch {
-    return [0];
-  }
-}
-
 function chooseStarts(lines: Array<{ hint: number; text: string }>, duration: number, speechStarts: number[]) {
   let previous = -0.05;
   const window = Math.max(2.5, Math.min(7, (duration / Math.max(lines.length, 1)) * 1.6));
@@ -179,10 +168,13 @@ function chooseStarts(lines: Array<{ hint: number; text: string }>, duration: nu
     const candidate = candidates
       .filter((start) => Math.abs(start - line.hint) <= window)
       .sort((a, b) => Math.abs(a - line.hint) - Math.abs(b - line.hint))[0];
-    let start = candidate ?? Math.max(previous + 0.05, Math.min(duration - 0.05, line.hint));
+    if (candidate === undefined) {
+      throw new Error(`WhisperX returned no speech segment near script line "${line.text}".`);
+    }
+    let start = candidate;
     start = Math.max(0, Math.min(duration - 0.05, start));
     previous = start;
-    return { start, usedWaveform: candidate !== undefined, distance: Math.abs(start - line.hint) };
+    return { start, usedWhisperX: true, distance: Math.abs(start - line.hint) };
   });
 }
 
@@ -193,10 +185,11 @@ async function analyzeJob(job: InternalJob) {
   try {
     job.duration = await probeDuration(job.audioPath);
     job.progress = 28;
-    job.progressLabel = "Detecting speech";
-    job.speechStarts = await detectSpeechStarts(job.audioPath);
+    job.progressLabel = "Transcribing with WhisperX GPU Worker";
+    const transcription = await transcribeWithWhisperX(job.audioPath, job.audioName);
+    job.speechStarts = transcription.segments.map((segment) => segment.start);
     job.progress = 55;
-    job.progressLabel = "Aligning script";
+    job.progressLabel = "Aligning script to WhisperX segments";
     if (job.scriptLines.length * 0.05 > job.duration) {
       throw new Error("The audio is too short for the number of script lines. Check that the voice-over is complete.");
     }
@@ -207,7 +200,7 @@ async function analyzeJob(job: InternalJob) {
       const timing = actualStarts[index];
        const safeStart = Math.min(timing.start, Math.max(0, job.duration - 0.05));
        const end = index < actualStarts.length - 1 ? actualStarts[index + 1].start : job.duration;
-      const confidence = timing.usedWaveform ? Math.max(0.62, 0.96 - timing.distance * 0.1) : 0.48;
+      const confidence = Math.max(0.62, 0.96 - timing.distance * 0.1);
       return {
         id: index,
         imageName: job.imageNames[index] ?? "Image needed",
@@ -218,8 +211,8 @@ async function analyzeJob(job: InternalJob) {
         hint: line.hint,
         text: line.text,
         confidence,
-        needsReview: !timing.usedWaveform || confidence < 0.8,
-        alignmentSource: timing.usedWaveform ? "Waveform onset fallback" : "Timestamp hint fallback",
+        needsReview: confidence < 0.8,
+        alignmentSource: "WhisperX segment timestamp",
       };
     });
     if (job.imagePaths.length !== job.scriptLines.length) {
@@ -314,11 +307,14 @@ router.get("/smartcutter/status", async (_req, res) => {
   } catch {
     ffmpegAvailable = false;
   }
+  const whisperXAvailable = await checkWhisperXHealth();
   res.json({
     status: "ready",
     ffmpegAvailable,
-    alignmentMode: "Waveform-assisted fallback; add WhisperX for word-level alignment",
-    whisperXAvailable: false,
+    alignmentMode: whisperXAvailable
+      ? "External WhisperX GPU Worker"
+      : "External WhisperX GPU Worker unavailable",
+    whisperXAvailable,
   });
 });
 
@@ -435,7 +431,7 @@ router.post("/smartcutter/jobs/:jobId/timeline/:lineId/realign", async (req, res
   if (candidate !== undefined) {
     line.start = Number(candidate.toFixed(3));
     line.confidence = 0.82;
-    line.alignmentSource = "Waveform onset fallback";
+    line.alignmentSource = "WhisperX segment timestamp";
     line.needsReview = false;
   } else {
     line.needsReview = true;
