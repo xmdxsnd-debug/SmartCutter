@@ -21,3 +21,8 @@ timeoutMs = 20000
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+WHISPERX_WORKER_URL = "https://imaging-marsupial-jawline.ngrok-free.dev/"
