@@ -39,9 +39,7 @@ export class WhisperXClientError extends Error {
 }
 
 function getWorkerUrl(pathname: string) {
-  const configuredUrl =
-    process.env.WHISPERX_URL?.trim() ||
-    process.env.WHISPERX_WORKER_URL?.trim();
+  const configuredUrl = process.env.WHISPERX_URL?.trim();
   if (!configuredUrl) {
     throw new WhisperXClientError(
       "WhisperX Worker is not configured. Set WHISPERX_URL.",
@@ -277,8 +275,16 @@ export async function checkWhisperXHealth() {
       healthTimeoutMs,
     );
     if (!response.ok) return false;
-    await response.arrayBuffer().catch(() => undefined);
-    return true;
+
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      return false;
+    }
+    if (typeof payload !== "object" || payload === null) return false;
+    const health = payload as Record<string, unknown>;
+    return health.status === "ok" && health.cuda === true && health.model === "large-v3";
   } catch {
     return false;
   }
