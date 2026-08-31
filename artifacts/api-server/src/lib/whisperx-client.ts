@@ -10,9 +10,16 @@ export type WhisperXSegment = {
   text: string;
 };
 
+export type WhisperXWordSegment = {
+  word: string;
+  start: number;
+  end: number;
+};
+
 export type WhisperXTranscription = {
   language: string;
   segments: WhisperXSegment[];
+  wordSegments: WhisperXWordSegment[];
 };
 
 export class WhisperXClientError extends Error {
@@ -32,10 +39,12 @@ export class WhisperXClientError extends Error {
 }
 
 function getWorkerUrl(pathname: string) {
-  const configuredUrl = process.env.WHISPERX_WORKER_URL?.trim();
+  const configuredUrl =
+    process.env.WHISPERX_URL?.trim() ||
+    process.env.WHISPERX_WORKER_URL?.trim();
   if (!configuredUrl) {
     throw new WhisperXClientError(
-      "WhisperX Worker is not configured. Set WHISPERX_WORKER_URL.",
+      "WhisperX Worker is not configured. Set WHISPERX_URL.",
       "configuration",
     );
   }
@@ -45,14 +54,14 @@ function getWorkerUrl(pathname: string) {
     baseUrl = new URL(configuredUrl);
   } catch {
     throw new WhisperXClientError(
-      "WHISPERX_WORKER_URL must be a valid HTTP(S) URL.",
+      "WHISPERX_URL must be a valid HTTP(S) URL.",
       "configuration",
     );
   }
 
   if (baseUrl.protocol !== "http:" && baseUrl.protocol !== "https:") {
     throw new WhisperXClientError(
-      "WHISPERX_WORKER_URL must use HTTP or HTTPS.",
+      "WHISPERX_URL must use HTTP or HTTPS.",
       "configuration",
     );
   }
@@ -177,9 +186,58 @@ function validateTranscription(payload: unknown): WhisperXTranscription {
     }
   }
 
+  const rawWordSegments = record.word_segments;
+  if (!Array.isArray(rawWordSegments) || rawWordSegments.length === 0) {
+    throw new WhisperXClientError(
+      "WhisperX Worker returned no word_segments. Word-level alignment is required.",
+      "protocol",
+    );
+  }
+
+  const wordSegments = rawWordSegments.map((rawWord, index): WhisperXWordSegment => {
+    if (typeof rawWord !== "object" || rawWord === null) {
+      throw new WhisperXClientError(
+        `WhisperX word segment ${index + 1} is invalid.`,
+        "protocol",
+      );
+    }
+
+    const wordSegment = rawWord as Record<string, unknown>;
+    const word = typeof wordSegment.word === "string" ? wordSegment.word.trim() : "";
+    const start = Number(wordSegment.start);
+    const end = Number(wordSegment.end);
+    if (!word) {
+      throw new WhisperXClientError(
+        `WhisperX word segment ${index + 1} has no word text.`,
+        "protocol",
+      );
+    }
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start) {
+      throw new WhisperXClientError(
+        `WhisperX word segment ${index + 1} has invalid start/end timestamps.`,
+        "protocol",
+      );
+    }
+
+    return { word, start, end };
+  });
+
+  for (let index = 1; index < wordSegments.length; index += 1) {
+    if (
+      wordSegments[index].start < wordSegments[index - 1].start ||
+      wordSegments[index].end < wordSegments[index - 1].end
+    ) {
+      throw new WhisperXClientError(
+        "WhisperX word_segments are not ordered by time.",
+        "protocol",
+      );
+    }
+  }
+
   return {
     language: typeof record.language === "string" && record.language.trim() ? record.language : "ar",
     segments,
+    wordSegments,
   };
 }
 

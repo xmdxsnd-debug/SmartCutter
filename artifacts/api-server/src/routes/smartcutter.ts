@@ -6,7 +6,11 @@ import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
 import { logger } from "../lib/logger";
-import { checkWhisperXHealth, transcribeWithWhisperX } from "../lib/whisperx-client";
+import {
+  checkWhisperXHealth,
+  transcribeWithWhisperX,
+  type WhisperXWordSegment,
+} from "../lib/whisperx-client";
 
 const execFileAsync = promisify(execFile);
 const router: IRouter = Router();
@@ -42,6 +46,7 @@ type InternalJob = {
   imageNames: string[];
   scriptLines: Array<{ hint: number; text: string }>;
   speechStarts: number[];
+  wordSegments: WhisperXWordSegment[];
   duration: number;
   status: JobStatus;
   progress: number;
@@ -160,21 +165,84 @@ async function probeDuration(audioPath: string) {
   return duration;
 }
 
-function chooseStarts(lines: Array<{ hint: number; text: string }>, duration: number, speechStarts: number[]) {
-  let previous = -0.05;
+function normalizeWord(value: string) {
+  return value
+    .normalize("NFKC")
+    .replace(/[\u064B-\u065F\u0670\u06D6-\u06ED]/g, "")
+    .replace(/[ـ]/g, "")
+    .replace(/[^\p{L}\p{N}]+/gu, "")
+    .toLocaleLowerCase("ar");
+}
+
+function tokenizeText(value: string) {
+  return value
+    .split(/\s+/)
+    .map(normalizeWord)
+    .filter(Boolean);
+}
+
+function chooseWordTimings(
+  lines: Array<{ hint: number; text: string }>,
+  duration: number,
+  wordSegments: WhisperXWordSegment[],
+) {
+  let previousWordIndex = -1;
   const window = Math.max(2.5, Math.min(7, (duration / Math.max(lines.length, 1)) * 1.6));
   return lines.map((line) => {
-    const candidates = speechStarts.filter((start) => start > previous + 0.04);
-    const candidate = candidates
-      .filter((start) => Math.abs(start - line.hint) <= window)
-      .sort((a, b) => Math.abs(a - line.hint) - Math.abs(b - line.hint))[0];
-    if (candidate === undefined) {
-      throw new Error(`WhisperX returned no speech segment near script line "${line.text}".`);
+    const lineWords = tokenizeText(line.text);
+    if (lineWords.length === 0) {
+      throw new Error(`Script line "${line.text}" has no words that can be aligned.`);
     }
-    let start = candidate;
-    start = Math.max(0, Math.min(duration - 0.05, start));
-    previous = start;
-    return { start, usedWhisperX: true, distance: Math.abs(start - line.hint) };
+    let best:
+      | {
+          startWordIndex: number;
+          endWordIndex: number;
+          matchedWords: number;
+          distance: number;
+        }
+      | undefined;
+
+    for (let startWordIndex = previousWordIndex + 1; startWordIndex < wordSegments.length; startWordIndex += 1) {
+      const firstWord = wordSegments[startWordIndex];
+      const distance = Math.abs(firstWord.start - line.hint);
+      if (distance > window) continue;
+      if (firstWord.start >= duration) continue;
+      if (normalizeWord(firstWord.word) !== lineWords[0]) continue;
+
+      let matchedWords = 1;
+      let endWordIndex = startWordIndex;
+      for (let lineWordIndex = 1; lineWordIndex < lineWords.length; lineWordIndex += 1) {
+        const candidateWordIndex = startWordIndex + lineWordIndex;
+        const candidateWord = wordSegments[candidateWordIndex];
+        if (!candidateWord || normalizeWord(candidateWord.word) !== lineWords[lineWordIndex]) break;
+        matchedWords += 1;
+        endWordIndex = candidateWordIndex;
+      }
+
+      if (
+        !best ||
+        matchedWords / lineWords.length > best.matchedWords / lineWords.length ||
+        (matchedWords === best.matchedWords && distance < best.distance)
+      ) {
+        best = { startWordIndex, endWordIndex, matchedWords, distance };
+      }
+    }
+
+    if (!best) {
+      throw new Error(`WhisperX returned no matching word timestamps near script line "${line.text}".`);
+    }
+
+    previousWordIndex = best.endWordIndex;
+    const start = wordSegments[best.startWordIndex].start;
+    const end = Math.min(duration, wordSegments[best.endWordIndex].end);
+    const matchRatio = best.matchedWords / lineWords.length;
+    const confidence = Math.max(0.5, Math.min(0.99, matchRatio - best.distance * 0.04 + 0.1));
+    return {
+      start: Math.max(0, Math.min(duration - 0.05, start)),
+      end: Math.max(start + 0.05, end),
+      confidence,
+      needsReview: matchRatio < 0.8 || best.distance > 2.5,
+    };
   });
 }
 
@@ -187,20 +255,20 @@ async function analyzeJob(job: InternalJob) {
     job.progress = 28;
     job.progressLabel = "Transcribing with WhisperX GPU Worker";
     const transcription = await transcribeWithWhisperX(job.audioPath, job.audioName);
-    job.speechStarts = transcription.segments.map((segment) => segment.start);
+    job.wordSegments = transcription.wordSegments;
+    job.speechStarts = transcription.wordSegments.map((word) => word.start);
     job.progress = 55;
-    job.progressLabel = "Aligning script to WhisperX segments";
+    job.progressLabel = "Aligning script to WhisperX word timestamps";
     if (job.scriptLines.length * 0.05 > job.duration) {
       throw new Error("The audio is too short for the number of script lines. Check that the voice-over is complete.");
     }
-    const actualStarts = chooseStarts(job.scriptLines, job.duration, job.speechStarts);
+    const actualTimings = chooseWordTimings(job.scriptLines, job.duration, job.wordSegments);
     job.progress = 78;
     job.progressLabel = "Calculating timings";
     job.timeline = job.scriptLines.map((line, index) => {
-      const timing = actualStarts[index];
-       const safeStart = Math.min(timing.start, Math.max(0, job.duration - 0.05));
-       const end = index < actualStarts.length - 1 ? actualStarts[index + 1].start : job.duration;
-      const confidence = Math.max(0.62, 0.96 - timing.distance * 0.1);
+      const timing = actualTimings[index];
+      const safeStart = Math.min(timing.start, Math.max(0, job.duration - 0.05));
+      const end = Math.min(job.duration, Math.max(safeStart + 0.05, timing.end));
       return {
         id: index,
         imageName: job.imageNames[index] ?? "Image needed",
@@ -210,9 +278,9 @@ async function analyzeJob(job: InternalJob) {
          end: Number(Math.min(job.duration, Math.max(safeStart + 0.05, end)).toFixed(3)),
         hint: line.hint,
         text: line.text,
-        confidence,
-        needsReview: confidence < 0.8,
-        alignmentSource: "WhisperX segment timestamp",
+        confidence: timing.confidence,
+        needsReview: timing.needsReview,
+        alignmentSource: "WhisperX word timestamp",
       };
     });
     if (job.imagePaths.length !== job.scriptLines.length) {
@@ -350,7 +418,7 @@ router.post("/smartcutter/analyze", async (req, res) => {
     }
     const job: InternalJob = {
       id, dir, audioPath, audioName: path.basename(audio.filename ?? "voice-over"), imagePaths, imageNames, scriptLines,
-      speechStarts: [], duration: 0, status: "queued", progress: 3, progressLabel: "Queued", timeline: [], videoPath: null, errors: [],
+      speechStarts: [], wordSegments: [], duration: 0, status: "queued", progress: 3, progressLabel: "Queued", timeline: [], videoPath: null, errors: [],
     };
     jobs.set(id, job);
     setImmediate(() => void analyzeJob(job));
