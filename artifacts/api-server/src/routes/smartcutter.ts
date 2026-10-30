@@ -7,8 +7,10 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { logger } from "../lib/logger";
 import {
+  buildIntelligentSegments,
   checkWhisperXHealth,
   transcribeWithWhisperX,
+  type SmartCutterTranscriptionSegment,
   type WhisperXWordSegment,
 } from "../lib/whisperx-client";
 
@@ -17,7 +19,10 @@ const router: IRouter = Router();
 const jobs = new Map<string, InternalJob>();
 const tempRoot = path.join("/tmp", "smartcutter");
 const maxUploadBytes = 500 * 1024 * 1024;
-const allowedAudio = new Set([".mp3", ".wav", ".m4a", ".aac", ".ogg", ".webm", ".flac"]);
+const allowedAudio = new Set([
+  ".mp3", ".wav", ".m4a", ".aac", ".ogg", ".webm", ".flac",
+  ".mp4", ".mov", ".mkv", ".m4v", ".avi",
+]);
 const allowedImages = new Set([".png", ".jpg", ".jpeg", ".webp"]);
 
 type JobStatus = "queued" | "analyzing" | "ready" | "rendering" | "complete" | "error";
@@ -45,8 +50,15 @@ type InternalJob = {
   imagePaths: string[];
   imageNames: string[];
   scriptLines: Array<{ hint: number; text: string }>;
+  language: string;
   speechStarts: number[];
   wordSegments: WhisperXWordSegment[];
+  transcription: {
+    language: string;
+    duration: number;
+    segments: SmartCutterTranscriptionSegment[];
+    word_segments: WhisperXWordSegment[];
+  } | null;
   duration: number;
   status: JobStatus;
   progress: number;
@@ -73,6 +85,14 @@ function publicJob(job: InternalJob) {
     scriptLineCount: job.scriptLines.length,
     imageCount: job.imagePaths.length,
     audioName: job.audioName,
+    transcription: job.transcription
+      ? {
+          language: job.transcription.language,
+          duration: Number(job.transcription.duration.toFixed(3)),
+          segments: job.transcription.segments,
+          word_segments: job.transcription.word_segments,
+        }
+      : null,
     timeline: job.timeline.map(({ imageIndex: _imageIndex, ...line }) => line),
     videoUrl: job.videoPath ? `/api/smartcutter/jobs/${job.id}/preview` : null,
     errors: job.errors,
@@ -110,6 +130,15 @@ function parseScript(input: string) {
     lines.push({ hint, text: match[2] });
   }
   return lines;
+}
+
+function parseLanguage(input: string) {
+  const language = input.trim().toLowerCase();
+  if (language === "auto") return language;
+  if (!/^[a-z]{2,3}(?:-[a-z]{2,4})?$/.test(language)) {
+    throw new Error("Choose a supported transcription language or Auto Detect.");
+  }
+  return language;
 }
 
 async function parseMultipart(req: Request): Promise<MultipartPart[]> {
@@ -254,9 +283,15 @@ async function analyzeJob(job: InternalJob) {
     job.duration = await probeDuration(job.audioPath);
     job.progress = 28;
     job.progressLabel = "Transcribing with WhisperX GPU Worker";
-    const transcription = await transcribeWithWhisperX(job.audioPath, job.audioName);
+    const transcription = await transcribeWithWhisperX(job.audioPath, job.audioName, job.language);
     job.wordSegments = transcription.wordSegments;
     job.speechStarts = transcription.wordSegments.map((word) => word.start);
+    job.transcription = {
+      language: transcription.language,
+      duration: job.duration,
+      segments: buildIntelligentSegments(transcription, job.duration),
+      word_segments: transcription.wordSegments,
+    };
     job.progress = 55;
     job.progressLabel = "Aligning script to WhisperX word timestamps";
     if (job.scriptLines.length * 0.05 > job.duration) {
@@ -391,15 +426,17 @@ router.post("/smartcutter/analyze", async (req, res) => {
     const parts = await parseMultipart(req);
     const audio = parts.find((part) => part.name === "audio" && part.filename);
     const script = parts.find((part) => part.name === "script" && !part.filename);
+    const languagePart = parts.find((part) => part.name === "language" && !part.filename);
     const images = parts.filter((part) => part.name === "images" && part.filename);
-    if (!audio) return fail(res, 400, "Add an audio file to continue.");
+    if (!audio) return fail(res, 400, "Add an audio or video file to continue.");
     if (!script || !script.data.toString("utf8").trim()) return fail(res, 400, "Add a timestamped script to continue.");
     if (!images.length) return fail(res, 400, "Add at least one image to continue.");
     const audioExt = path.extname(audio.filename ?? "").toLowerCase();
-    if (!allowedAudio.has(audioExt)) return fail(res, 400, "Unsupported audio type. Use MP3, WAV, M4A, AAC, OGG, WEBM, or FLAC.");
+    if (!allowedAudio.has(audioExt)) return fail(res, 400, "Unsupported media type. Use MP3, WAV, M4A, AAC, OGG, WEBM, FLAC, MP4, MOV, MKV, M4V, or AVI.");
     const invalidImage = images.find((image) => !allowedImages.has(path.extname(image.filename ?? "").toLowerCase()));
     if (invalidImage) return fail(res, 400, "Unsupported image type. Use PNG, JPG, JPEG, or WEBP.");
     const scriptLines = parseScript(script.data.toString("utf8"));
+    const language = parseLanguage(languagePart?.data.toString("utf8") || "auto");
     if (!scriptLines.length) return fail(res, 400, "No valid script lines were found. Use lines such as [0:06] Your sentence.");
     const id = crypto.randomUUID();
     const dir = path.join(tempRoot, id);
@@ -418,7 +455,7 @@ router.post("/smartcutter/analyze", async (req, res) => {
     }
     const job: InternalJob = {
       id, dir, audioPath, audioName: path.basename(audio.filename ?? "voice-over"), imagePaths, imageNames, scriptLines,
-      speechStarts: [], wordSegments: [], duration: 0, status: "queued", progress: 3, progressLabel: "Queued", timeline: [], videoPath: null, errors: [],
+      language, speechStarts: [], wordSegments: [], transcription: null, duration: 0, status: "queued", progress: 3, progressLabel: "Queued", timeline: [], videoPath: null, errors: [],
     };
     jobs.set(id, job);
     setImmediate(() => void analyzeJob(job));

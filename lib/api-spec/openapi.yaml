@@ -194,16 +194,21 @@ components:
           type: boolean
     SmartCutterAnalyzeInput:
       type: object
-      required: [audio, script, images]
+      required: [audio, script, images, language]
       properties:
         audio:
           type: string
+          description: Audio or video file to transcribe
         script:
           type: string
         images:
           type: array
           items:
             type: string
+        language:
+          type: string
+          default: auto
+          description: WhisperX language code, or auto for automatic detection
     SmartCutterTimelineLine:
       type: object
       required: [id, imageName, imageUrl, start, end, hint, text, confidence, needsReview]
@@ -228,6 +233,46 @@ components:
           type: boolean
         alignmentSource:
           type: string
+    SmartCutterWordSegment:
+      type: object
+      required: [word, start, end]
+      properties:
+        word:
+          type: string
+        start:
+          type: number
+        end:
+          type: number
+    SmartCutterTranscriptionSegment:
+      type: object
+      required: [start, end, text, word_segments]
+      properties:
+        start:
+          type: number
+        end:
+          type: number
+        text:
+          type: string
+        word_segments:
+          type: array
+          items:
+            $ref: "#/components/schemas/SmartCutterWordSegment"
+    SmartCutterTranscription:
+      type: object
+      required: [language, duration, segments, word_segments]
+      properties:
+        language:
+          type: string
+        duration:
+          type: number
+        segments:
+          type: array
+          items:
+            $ref: "#/components/schemas/SmartCutterTranscriptionSegment"
+        word_segments:
+          type: array
+          items:
+            $ref: "#/components/schemas/SmartCutterWordSegment"
     SmartCutterJob:
       type: object
       required: [id, status, progress, progressLabel, duration, scriptLineCount, imageCount, timeline, errors]
@@ -249,6 +294,10 @@ components:
           type: number
         audioName:
           type: string
+        transcription:
+          oneOf:
+            - $ref: "#/components/schemas/SmartCutterTranscription"
+            - type: "null"
         timeline:
           type: array
           items:

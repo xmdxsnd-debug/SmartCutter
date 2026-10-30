@@ -7,7 +7,10 @@
  */
 
 export interface SmartCutterAnalyzeInput {
+  /** Audio or video file to transcribe */
   audio: string;
   script: string;
   images: string[];
+  /** WhisperX language code, or auto for automatic detection */
+  language: string;
 }

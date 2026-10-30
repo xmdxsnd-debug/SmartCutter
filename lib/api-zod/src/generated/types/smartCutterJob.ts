@@ -7,6 +7,7 @@
  */
 import type { SmartCutterJobStatus } from './smartCutterJobStatus';
 import type { SmartCutterTimelineLine } from './smartCutterTimelineLine';
+import type { SmartCutterTranscription } from './smartCutterTranscription';
 
 export interface SmartCutterJob {
   id: string;
@@ -17,6 +18,7 @@ export interface SmartCutterJob {
   scriptLineCount: number;
   imageCount: number;
   audioName?: string;
+  transcription?: SmartCutterTranscription | null;
   timeline: SmartCutterTimelineLine[];
   /** @nullable */
   videoUrl?: string | null;

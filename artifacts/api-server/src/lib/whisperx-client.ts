@@ -22,6 +22,13 @@ export type WhisperXTranscription = {
   wordSegments: WhisperXWordSegment[];
 };
 
+export type SmartCutterTranscriptionSegment = {
+  start: number;
+  end: number;
+  text: string;
+  word_segments: WhisperXWordSegment[];
+};
+
 export class WhisperXClientError extends Error {
   readonly code: "configuration" | "timeout" | "http" | "protocol" | "network";
   readonly statusCode?: number;
@@ -100,6 +107,16 @@ function audioMimeType(audioName: string) {
       return "audio/webm";
     case ".flac":
       return "audio/flac";
+    case ".mp4":
+      return "video/mp4";
+    case ".mov":
+      return "video/quicktime";
+    case ".mkv":
+      return "video/x-matroska";
+    case ".m4v":
+      return "video/x-m4v";
+    case ".avi":
+      return "video/x-msvideo";
     default:
       return "application/octet-stream";
   }
@@ -239,6 +256,73 @@ function validateTranscription(payload: unknown): WhisperXTranscription {
   };
 }
 
+function hasSentenceEnding(word: string) {
+  return /[.!?؟؛。！？]$/u.test(word.trim());
+}
+
+function hasClauseEnding(word: string) {
+  return /[,،:：]$/u.test(word.trim());
+}
+
+export function buildIntelligentSegments(
+  transcription: WhisperXTranscription,
+  duration: number,
+): SmartCutterTranscriptionSegment[] {
+  const words = transcription.wordSegments;
+  const segments: SmartCutterTranscriptionSegment[] = [];
+  let currentWords: WhisperXWordSegment[] = [];
+  let rawSegmentIndex = 0;
+
+  const flush = () => {
+    if (!currentWords.length) return;
+    const start = currentWords[0].start;
+    const end = Math.min(duration, currentWords[currentWords.length - 1].end);
+    segments.push({
+      start: Number(start.toFixed(3)),
+      end: Number(Math.max(start + 0.05, end).toFixed(3)),
+      text: currentWords.map((word) => word.word.trim()).filter(Boolean).join(" "),
+      word_segments: currentWords.map(({ word, start: wordStart, end: wordEnd }) => ({
+        word,
+        start: wordStart,
+        end: wordEnd,
+      })),
+    });
+    currentWords = [];
+  };
+
+  for (let index = 0; index < words.length; index += 1) {
+    const word = words[index];
+    const nextWord = words[index + 1];
+    currentWords.push(word);
+    if (!nextWord) {
+      flush();
+      continue;
+    }
+
+    while (
+      rawSegmentIndex < transcription.segments.length - 1 &&
+      transcription.segments[rawSegmentIndex].end <= word.end + 0.05
+    ) {
+      rawSegmentIndex += 1;
+    }
+
+    const pause = Math.max(0, nextWord.start - word.end);
+    const rawBoundary =
+      transcription.segments[rawSegmentIndex - 1]?.end !== undefined &&
+      Math.abs(transcription.segments[rawSegmentIndex - 1].end - word.end) <= 0.18;
+    const sentenceBoundary = hasSentenceEnding(word.word);
+    const clauseBoundary = hasClauseEnding(word.word);
+    const naturalPause =
+      pause >= 0.55 ||
+      (pause >= 0.3 && (sentenceBoundary || clauseBoundary || rawBoundary));
+    const emergencyBoundary = nextWord.start - currentWords[0].start >= 18;
+
+    if (sentenceBoundary || naturalPause || emergencyBoundary) flush();
+  }
+
+  return segments;
+}
+
 async function fetchWithTimeout(
   url: URL,
   init: RequestInit,
@@ -293,10 +377,12 @@ export async function checkWhisperXHealth() {
 export async function transcribeWithWhisperX(
   audioPath: string,
   audioName: string,
+  language = "auto",
 ) {
   const audio = await openAsBlob(audioPath, { type: audioMimeType(audioName) });
   const formData = new FormData();
   formData.append("audio", audio, path.basename(audioName));
+  if (language !== "auto") formData.append("language", language);
 
   const response = await fetchWithTimeout(
     getWorkerUrl("/v1/transcribe"),

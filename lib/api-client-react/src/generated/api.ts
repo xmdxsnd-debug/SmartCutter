@@ -225,6 +225,7 @@ export const analyzeSmartCutterJob = async (smartCutterAnalyzeInput: SmartCutter
 formData.append(`audio`, smartCutterAnalyzeInput.audio);
 formData.append(`script`, smartCutterAnalyzeInput.script);
 smartCutterAnalyzeInput.images.forEach(value => formData.append(`images`, value));
+formData.append(`language`, smartCutterAnalyzeInput.language);
 
   return customFetch<SmartCutterJob>(getAnalyzeSmartCutterJobUrl(),
   {

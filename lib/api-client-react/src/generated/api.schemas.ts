@@ -17,9 +17,12 @@ export interface SmartCutterStatus {
 }
 
 export interface SmartCutterAnalyzeInput {
+  /** Audio or video file to transcribe */
   audio: string;
   script: string;
   images: string[];
+  /** WhisperX language code, or auto for automatic detection */
+  language: string;
 }
 
 export interface SmartCutterTimelineLine {
@@ -33,6 +36,26 @@ export interface SmartCutterTimelineLine {
   confidence: number;
   needsReview: boolean;
   alignmentSource?: string;
+}
+
+export interface SmartCutterWordSegment {
+  word: string;
+  start: number;
+  end: number;
+}
+
+export interface SmartCutterTranscriptionSegment {
+  start: number;
+  end: number;
+  text: string;
+  word_segments: SmartCutterWordSegment[];
+}
+
+export interface SmartCutterTranscription {
+  language: string;
+  duration: number;
+  segments: SmartCutterTranscriptionSegment[];
+  word_segments: SmartCutterWordSegment[];
 }
 
 export type SmartCutterJobStatus = typeof SmartCutterJobStatus[keyof typeof SmartCutterJobStatus];
@@ -56,6 +79,7 @@ export interface SmartCutterJob {
   scriptLineCount: number;
   imageCount: number;
   audioName?: string;
+  transcription?: SmartCutterTranscription | null;
   timeline: SmartCutterTimelineLine[];
   /** @nullable */
   videoUrl?: string | null;

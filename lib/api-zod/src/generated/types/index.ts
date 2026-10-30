@@ -13,3 +13,6 @@ export * from './smartCutterJobStatus';
 export * from './smartCutterStatus';
 export * from './smartCutterTimelineLine';
 export * from './smartCutterTimelineUpdate';
+export * from './smartCutterTranscription';
+export * from './smartCutterTranscriptionSegment';
+export * from './smartCutterWordSegment';

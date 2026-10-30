@@ -31,10 +31,13 @@ export const GetSmartCutterStatusResponse = zod.object({
 /**
  * @summary Analyze an audio file, timestamped script, and ordered images
  */
+export const analyzeSmartCutterJobBodyLanguageDefault = `auto`;
+
 export const AnalyzeSmartCutterJobBody = zod.object({
-  "audio": zod.string(),
+  "audio": zod.string().describe('Audio or video file to transcribe'),
   "script": zod.string(),
-  "images": zod.array(zod.string())
+  "images": zod.array(zod.string()),
+  "language": zod.string().default(analyzeSmartCutterJobBodyLanguageDefault).describe('WhisperX language code, or auto for automatic detection')
 })
 
 export const AnalyzeSmartCutterJobResponse = zod.object({
@@ -46,6 +49,25 @@ export const AnalyzeSmartCutterJobResponse = zod.object({
   "scriptLineCount": zod.number(),
   "imageCount": zod.number(),
   "audioName": zod.string().optional(),
+  "transcription": zod.union([zod.object({
+  "language": zod.string(),
+  "duration": zod.number(),
+  "segments": zod.array(zod.object({
+  "start": zod.number(),
+  "end": zod.number(),
+  "text": zod.string(),
+  "word_segments": zod.array(zod.object({
+  "word": zod.string(),
+  "start": zod.number(),
+  "end": zod.number()
+}))
+})),
+  "word_segments": zod.array(zod.object({
+  "word": zod.string(),
+  "start": zod.number(),
+  "end": zod.number()
+}))
+}),zod.null()]).optional(),
   "timeline": zod.array(zod.object({
   "id": zod.number(),
   "imageName": zod.string(),
@@ -79,6 +101,25 @@ export const GetSmartCutterJobResponse = zod.object({
   "scriptLineCount": zod.number(),
   "imageCount": zod.number(),
   "audioName": zod.string().optional(),
+  "transcription": zod.union([zod.object({
+  "language": zod.string(),
+  "duration": zod.number(),
+  "segments": zod.array(zod.object({
+  "start": zod.number(),
+  "end": zod.number(),
+  "text": zod.string(),
+  "word_segments": zod.array(zod.object({
+  "word": zod.string(),
+  "start": zod.number(),
+  "end": zod.number()
+}))
+})),
+  "word_segments": zod.array(zod.object({
+  "word": zod.string(),
+  "start": zod.number(),
+  "end": zod.number()
+}))
+}),zod.null()]).optional(),
   "timeline": zod.array(zod.object({
   "id": zod.number(),
   "imageName": zod.string(),
@@ -127,6 +168,25 @@ export const UpdateSmartCutterTimelineLineResponse = zod.object({
   "scriptLineCount": zod.number(),
   "imageCount": zod.number(),
   "audioName": zod.string().optional(),
+  "transcription": zod.union([zod.object({
+  "language": zod.string(),
+  "duration": zod.number(),
+  "segments": zod.array(zod.object({
+  "start": zod.number(),
+  "end": zod.number(),
+  "text": zod.string(),
+  "word_segments": zod.array(zod.object({
+  "word": zod.string(),
+  "start": zod.number(),
+  "end": zod.number()
+}))
+})),
+  "word_segments": zod.array(zod.object({
+  "word": zod.string(),
+  "start": zod.number(),
+  "end": zod.number()
+}))
+}),zod.null()]).optional(),
   "timeline": zod.array(zod.object({
   "id": zod.number(),
   "imageName": zod.string(),
@@ -161,6 +221,25 @@ export const RealignSmartCutterTimelineLineResponse = zod.object({
   "scriptLineCount": zod.number(),
   "imageCount": zod.number(),
   "audioName": zod.string().optional(),
+  "transcription": zod.union([zod.object({
+  "language": zod.string(),
+  "duration": zod.number(),
+  "segments": zod.array(zod.object({
+  "start": zod.number(),
+  "end": zod.number(),
+  "text": zod.string(),
+  "word_segments": zod.array(zod.object({
+  "word": zod.string(),
+  "start": zod.number(),
+  "end": zod.number()
+}))
+})),
+  "word_segments": zod.array(zod.object({
+  "word": zod.string(),
+  "start": zod.number(),
+  "end": zod.number()
+}))
+}),zod.null()]).optional(),
   "timeline": zod.array(zod.object({
   "id": zod.number(),
   "imageName": zod.string(),
@@ -194,6 +273,25 @@ export const RenderSmartCutterJobResponse = zod.object({
   "scriptLineCount": zod.number(),
   "imageCount": zod.number(),
   "audioName": zod.string().optional(),
+  "transcription": zod.union([zod.object({
+  "language": zod.string(),
+  "duration": zod.number(),
+  "segments": zod.array(zod.object({
+  "start": zod.number(),
+  "end": zod.number(),
+  "text": zod.string(),
+  "word_segments": zod.array(zod.object({
+  "word": zod.string(),
+  "start": zod.number(),
+  "end": zod.number()
+}))
+})),
+  "word_segments": zod.array(zod.object({
+  "word": zod.string(),
+  "start": zod.number(),
+  "end": zod.number()
+}))
+}),zod.null()]).optional(),
   "timeline": zod.array(zod.object({
   "id": zod.number(),
   "imageName": zod.string(),
