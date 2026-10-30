@@ -8,9 +8,10 @@
 
 export interface SmartCutterAnalyzeInput {
   /** Audio or video file to transcribe */
-  audio: string;
-  script: string;
-  images: string[];
-  /** WhisperX language code, or auto for automatic detection */
-  language: string;
+  audio: Blob;
+  /** Optional timestamped script for synchronized MP4 creation */
+  script?: string;
+  images?: Blob[];
+  /** WhisperX language code supported by forced alignment, or auto for automatic detection */
+  language?: string;
 }

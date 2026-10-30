@@ -47,3 +47,10 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Local Windows WhisperX runtime and model files
+.venv/
+.smartcutter-local/
+.env.local
+__pycache__/
+*.py[cod]

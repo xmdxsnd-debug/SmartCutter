@@ -2,7 +2,7 @@ import { openAsBlob } from "node:fs";
 import path from "node:path";
 
 const healthTimeoutMs = 10_000;
-const defaultTranscriptionTimeoutMs = 45 * 60 * 1000;
+const defaultTranscriptionTimeoutMs = 12 * 60 * 60 * 1000;
 
 export type WhisperXSegment = {
   start: number;
@@ -20,6 +20,12 @@ export type WhisperXTranscription = {
   language: string;
   segments: WhisperXSegment[];
   wordSegments: WhisperXWordSegment[];
+};
+
+export type WhisperXWorkerHealth = {
+  available: boolean;
+  cuda: boolean;
+  device: string;
 };
 
 export type SmartCutterTranscriptionSegment = {
@@ -348,7 +354,7 @@ async function fetchWithTimeout(
   }
 }
 
-export async function checkWhisperXHealth() {
+export async function getWhisperXWorkerHealth(): Promise<WhisperXWorkerHealth> {
   try {
     const response = await fetchWithTimeout(
       getWorkerUrl("/health"),
@@ -358,20 +364,35 @@ export async function checkWhisperXHealth() {
       },
       healthTimeoutMs,
     );
-    if (!response.ok) return false;
+    if (!response.ok) return { available: false, cuda: false, device: "unavailable" };
 
     let payload: unknown;
     try {
       payload = await response.json();
     } catch {
-      return false;
+      return { available: false, cuda: false, device: "unavailable" };
     }
-    if (typeof payload !== "object" || payload === null) return false;
+    if (typeof payload !== "object" || payload === null) {
+      return { available: false, cuda: false, device: "unavailable" };
+    }
     const health = payload as Record<string, unknown>;
-    return health.status === "ok" && health.cuda === true && health.model === "large-v3";
+    const cuda = health.cuda === true;
+    const available =
+      health.status === "ok" &&
+      (typeof health.cuda === "boolean") &&
+      health.model === "large-v3";
+    return {
+      available,
+      cuda,
+      device: typeof health.device === "string" ? health.device : cuda ? "cuda" : "cpu",
+    };
   } catch {
-    return false;
+    return { available: false, cuda: false, device: "unavailable" };
   }
+}
+
+export async function checkWhisperXHealth() {
+  return (await getWhisperXWorkerHealth()).available;
 }
 
 export async function transcribeWithWhisperX(

@@ -2,13 +2,14 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createReadStream } from "node:fs";
+import os from "node:os";
 import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
 import { logger } from "../lib/logger";
 import {
   buildIntelligentSegments,
-  checkWhisperXHealth,
+  getWhisperXWorkerHealth,
   transcribeWithWhisperX,
   type SmartCutterTranscriptionSegment,
   type WhisperXWordSegment,
@@ -17,7 +18,7 @@ import {
 const execFileAsync = promisify(execFile);
 const router: IRouter = Router();
 const jobs = new Map<string, InternalJob>();
-const tempRoot = path.join("/tmp", "smartcutter");
+const tempRoot = path.join(os.tmpdir(), "smartcutter");
 const maxUploadBytes = 500 * 1024 * 1024;
 const allowedAudio = new Set([
   ".mp3", ".wav", ".m4a", ".aac", ".ogg", ".webm", ".flac",
@@ -282,7 +283,7 @@ async function analyzeJob(job: InternalJob) {
   try {
     job.duration = await probeDuration(job.audioPath);
     job.progress = 28;
-    job.progressLabel = "Transcribing with WhisperX GPU Worker";
+    job.progressLabel = "Transcribing with local WhisperX large-v3";
     const transcription = await transcribeWithWhisperX(job.audioPath, job.audioName, job.language);
     job.wordSegments = transcription.wordSegments;
     job.speechStarts = transcription.wordSegments.map((word) => word.start);
@@ -294,6 +295,13 @@ async function analyzeJob(job: InternalJob) {
     };
     job.progress = 55;
     job.progressLabel = "Aligning script to WhisperX word timestamps";
+    if (!job.scriptLines.length) {
+      job.progress = 100;
+      job.progressLabel = "Transcription ready";
+      job.status = "ready";
+      job.errors = [];
+      return;
+    }
     if (job.scriptLines.length * 0.05 > job.duration) {
       throw new Error("The audio is too short for the number of script lines. Check that the voice-over is complete.");
     }
@@ -410,14 +418,14 @@ router.get("/smartcutter/status", async (_req, res) => {
   } catch {
     ffmpegAvailable = false;
   }
-  const whisperXAvailable = await checkWhisperXHealth();
+  const whisperX = await getWhisperXWorkerHealth();
   res.json({
     status: "ready",
     ffmpegAvailable,
-    alignmentMode: whisperXAvailable
-      ? "External WhisperX GPU Worker"
-      : "External WhisperX GPU Worker unavailable",
-    whisperXAvailable,
+    alignmentMode: whisperX.available
+      ? `Local WhisperX ${whisperX.device.toUpperCase()}`
+      : "Local WhisperX Worker unavailable",
+    whisperXAvailable: whisperX.available,
   });
 });
 
@@ -429,15 +437,17 @@ router.post("/smartcutter/analyze", async (req, res) => {
     const languagePart = parts.find((part) => part.name === "language" && !part.filename);
     const images = parts.filter((part) => part.name === "images" && part.filename);
     if (!audio) return fail(res, 400, "Add an audio or video file to continue.");
-    if (!script || !script.data.toString("utf8").trim()) return fail(res, 400, "Add a timestamped script to continue.");
-    if (!images.length) return fail(res, 400, "Add at least one image to continue.");
     const audioExt = path.extname(audio.filename ?? "").toLowerCase();
     if (!allowedAudio.has(audioExt)) return fail(res, 400, "Unsupported media type. Use MP3, WAV, M4A, AAC, OGG, WEBM, FLAC, MP4, MOV, MKV, M4V, or AVI.");
     const invalidImage = images.find((image) => !allowedImages.has(path.extname(image.filename ?? "").toLowerCase()));
     if (invalidImage) return fail(res, 400, "Unsupported image type. Use PNG, JPG, JPEG, or WEBP.");
-    const scriptLines = parseScript(script.data.toString("utf8"));
+    const scriptText = script?.data.toString("utf8").trim() ?? "";
+    if (Boolean(scriptText) !== (images.length > 0)) {
+      return fail(res, 400, "For MP4 creation, provide both a timestamped script and ordered images. For transcription only, omit both.");
+    }
+    const scriptLines = scriptText ? parseScript(scriptText) : [];
     const language = parseLanguage(languagePart?.data.toString("utf8") || "auto");
-    if (!scriptLines.length) return fail(res, 400, "No valid script lines were found. Use lines such as [0:06] Your sentence.");
+    if (scriptText && !scriptLines.length) return fail(res, 400, "No valid script lines were found. Use lines such as [0:06] Your sentence.");
     const id = crypto.randomUUID();
     const dir = path.join(tempRoot, id);
     await mkdir(dir, { recursive: true });

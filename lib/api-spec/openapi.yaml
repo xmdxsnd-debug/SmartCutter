@@ -42,7 +42,7 @@ paths:
     post:
       operationId: analyzeSmartCutterJob
       tags: [smartcutter]
-      summary: Analyze an audio file, timestamped script, and ordered images
+      summary: Transcribe media and optionally build an ordered image timeline
       requestBody:
         required: true
         content:
@@ -194,21 +194,24 @@ components:
           type: boolean
     SmartCutterAnalyzeInput:
       type: object
-      required: [audio, script, images, language]
+      required: [audio]
       properties:
         audio:
           type: string
+          format: binary
           description: Audio or video file to transcribe
         script:
           type: string
+          description: Optional timestamped script for synchronized MP4 creation
         images:
           type: array
           items:
             type: string
+            format: binary
         language:
           type: string
           default: auto
-          description: WhisperX language code, or auto for automatic detection
+          description: WhisperX language code supported by forced alignment, or auto for automatic detection
     SmartCutterTimelineLine:
       type: object
       required: [id, imageName, imageUrl, start, end, hint, text, confidence, needsReview]

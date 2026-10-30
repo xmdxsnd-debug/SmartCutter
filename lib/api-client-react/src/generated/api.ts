@@ -218,14 +218,20 @@ export const getAnalyzeSmartCutterJobUrl = () => {
 }
 
 /**
- * @summary Analyze an audio file, timestamped script, and ordered images
+ * @summary Transcribe media and optionally build an ordered image timeline
  */
 export const analyzeSmartCutterJob = async (smartCutterAnalyzeInput: SmartCutterAnalyzeInput, options?: Parameters<typeof customFetch>[1]): Promise<SmartCutterJob> => {
     const formData = new FormData();
 formData.append(`audio`, smartCutterAnalyzeInput.audio);
-formData.append(`script`, smartCutterAnalyzeInput.script);
-smartCutterAnalyzeInput.images.forEach(value => formData.append(`images`, value));
-formData.append(`language`, smartCutterAnalyzeInput.language);
+if(smartCutterAnalyzeInput.script !== undefined) {
+ formData.append(`script`, smartCutterAnalyzeInput.script);
+ }
+if(smartCutterAnalyzeInput.images !== undefined) {
+ smartCutterAnalyzeInput.images.forEach(value => formData.append(`images`, value));
+ }
+if(smartCutterAnalyzeInput.language !== undefined) {
+ formData.append(`language`, smartCutterAnalyzeInput.language);
+ }
 
   return customFetch<SmartCutterJob>(getAnalyzeSmartCutterJobUrl(),
   {
@@ -272,7 +278,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type AnalyzeSmartCutterJobMutationError = ErrorType<void>
 
     /**
- * @summary Analyze an audio file, timestamped script, and ordered images
+ * @summary Transcribe media and optionally build an ordered image timeline
  */
 export const useAnalyzeSmartCutterJob = <TError = ErrorType<void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof analyzeSmartCutterJob>>, TError,{data: BodyType<SmartCutterAnalyzeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}

@@ -29,15 +29,15 @@ export const GetSmartCutterStatusResponse = zod.object({
 
 
 /**
- * @summary Analyze an audio file, timestamped script, and ordered images
+ * @summary Transcribe media and optionally build an ordered image timeline
  */
 export const analyzeSmartCutterJobBodyLanguageDefault = `auto`;
 
 export const AnalyzeSmartCutterJobBody = zod.object({
-  "audio": zod.string().describe('Audio or video file to transcribe'),
-  "script": zod.string(),
-  "images": zod.array(zod.string()),
-  "language": zod.string().default(analyzeSmartCutterJobBodyLanguageDefault).describe('WhisperX language code, or auto for automatic detection')
+  "audio": zod.instanceof(File).describe('Audio or video file to transcribe'),
+  "script": zod.string().optional().describe('Optional timestamped script for synchronized MP4 creation'),
+  "images": zod.array(zod.instanceof(File)).optional(),
+  "language": zod.string().default(analyzeSmartCutterJobBodyLanguageDefault).describe('WhisperX language code supported by forced alignment, or auto for automatic detection')
 })
 
 export const AnalyzeSmartCutterJobResponse = zod.object({
