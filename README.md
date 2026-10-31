@@ -1,58 +1,118 @@
-# SmartCutter (نسخة Windows المحلية)
+# SmartCutter
 
-تشغّل هذه النسخة SmartCutter من PowerShell أو CMD، وتعالج الصوت والفيديو محليًا باستخدام WhisperX `large-v3` مع محاذاة الكلمات. لا تحتاج إلى Worker خارجي أو ngrok أو API key.
+<p align="center">
+  <strong>Local-first audio and video transcription for Windows</strong><br>
+  Transcribe, align, and prepare media from your terminal—with no remote inference service.
+</p>
 
-## التثبيت والتشغيل
+<p align="center">
+  <img src="https://img.shields.io/badge/Platform-Windows-0078D4?style=flat-square&logo=windows&logoColor=white" alt="Windows">
+  <img src="https://img.shields.io/badge/Inference-Local-2ea44f?style=flat-square" alt="Local inference">
+  <img src="https://img.shields.io/badge/ASR-WhisperX%20large--v3-6f42c1?style=flat-square" alt="WhisperX large-v3">
+</p>
 
-1. ثبّت Git، ثم استنسخ المستودع وافتح مجلده:
+SmartCutter runs as a text-based Windows workflow in PowerShell or Command Prompt. It uses **WhisperX large-v3** for transcription and forced alignment for word-level timestamps. The project also includes a workflow for preparing an MP4 from a media file, a timestamped script, and images.
 
-   ```powershell
-   git clone https://github.com/xmdxsnd-debug/SmartCutter.git
-   cd SmartCutter
-   ```
+> Audio and video are processed by a local worker on your computer. No external WhisperX worker, ngrok tunnel, or transcription API key is required.
 
-2. شغّل الإعداد مرة واحدة:
+## Features
 
-   ```powershell
-   .\setup.cmd
-   ```
+- Transcribe common audio and video formats.
+- Automatically detect the language or provide a language code.
+- Generate word-level timestamps with WhisperX forced alignment.
+- Copy timestamped text to the clipboard or save it as TXT or JSON.
+- Prepare an MP4 using a media file, timestamped script, and ordered images.
+- Review timeline entries and adjust their timing or image assignment.
+- Use an NVIDIA GPU when available, or run with PyTorch on CPU.
 
-3. شغّل SmartCutter:
+## Quick start
 
-   ```powershell
-   .\run.cmd
-   ```
+Install [Git for Windows](https://git-scm.com/download/win), open a terminal, and run:
 
-يمكن تشغيل `setup.ps1` و`run.ps1` مباشرة من PowerShell أيضًا. يثبت الإعداد Node.js 22 أو أحدث، وPython 3.11، وFFmpeg، وpnpm، واعتماديات المشروع. إذا لم يكن `winget` متاحًا، ثبّت هذه المتطلبات يدويًا ثم أعد تشغيل الإعداد.
-
-## المحرك المحلي والنماذج
-
-- يكتشف الإعداد وجود NVIDIA عبر `nvidia-smi` ويختار PyTorch مع CUDA عند توفرها؛ وإلا يثبت نسخة CPU. المعالجة على CPU أبطأ بكثير، وقد لا تكون مناسبة للملفات الطويلة.
-- عند أول تشغيل، ينزّل WhisperX `large-v3` ونموذج المحاذاة إلى `%LOCALAPPDATA%\SmartCutter\huggingface`. يلزم اتصال إنترنت ومساحة تخزين كافية في هذه المرة؛ التشغيل التالي يستخدم الملفات المخزنة محليًا.
-- بعد اكتمال التنزيل، التفريغ والمحاذاة ومعالجة الوسائط محلية ولا تُرسل الملفات إلى خدمة سحابية. البرامج والنماذج المستخدمة مجانية، لكن الأداء يعتمد على جهازك، وتنزيل النماذج يستهلك مساحة واتصال إنترنت.
-- يتطلب إنشاء MP4 وجود FFmpeg. يتولى الإعداد تثبيته إذا كان `winget` متاحًا.
-- مفتاح واجهة Worker محلي مؤقت يُنشأ عند التشغيل ولا يُحفظ في ملفات المشروع. لا تُضف مفاتيح إلى Git أو ملفات الواجهة.
-
-## الاستخدام من سطر الأوامر
-
-تظهر قائمة نصية بعد تشغيل `run.cmd`:
-
-1. **تفريغ صوت أو فيديو:** أدخل مسار الملف، ثم اختر اكتشاف اللغة أو العربية أو الإنجليزية أو رمز لغة آخر. يُستخدم forced alignment للكلمات، ثم يمكن نسخ النص ذي التوقيتات أو حفظه إلى TXT وJSON.
-2. **إنشاء MP4:** أدخل ملف الوسائط وملف السكربت النصي ذي التوقيتات ومسارات الصور بالترتيب. راجع أو صحح توقيتات الأسطر والصور، ثم أنشئ الفيديو واحفظه بجانب ملف الوسائط.
-
-يمكن لصق مسارات Windows بين علامتي اقتباس. صيغة السكربت مثالًا:
-
-```text
-[0:00] الجملة الأولى،
-[0:05] الجملة الثانية.
+```powershell
+git clone https://github.com/xmdxsnd-debug/SmartCutter.git
+cd SmartCutter
+.\setup.cmd
+.\run.cmd
 ```
 
-تظهر سجلات الخدمات المحلية عند الحاجة داخل `.smartcutter-local`. أوقف التشغيل بالخروج من القائمة؛ وسيوقف البرنامج API وWorker المحليين معه.
+Run `setup.cmd` once. It installs the project prerequisites and dependencies, then `run.cmd` starts the local terminal workflow. In Command Prompt, run `setup.cmd` and `run.cmd` without the `.\` prefix.
 
-## واجهة الموقع
+You can also run `setup.ps1` and `run.ps1` directly from PowerShell.
 
-تبقى ملفات واجهة SmartCutter الحالية ضمن المشروع، ولم تُحذف أو يُعاد تصميمها. أوامر `run.cmd` و`run.ps1` تشغّل تجربة الطرفية المحلية بدل فتح المتصفح.
+## What setup installs
 
-## ملاحظات للنشر على GitHub
+When available, `winget` installs any missing prerequisites:
 
-قبل جعل المستودع عامًا، راجع الملفات التي سترفعها وتأكد من عدم إضافة أسرار أو ملفات وسائط أو نماذج. يتجاهل Git ملفات البيئة المحلية والنماذج وبيئة Python. أضف رابط مستودعك أنت مكان `<رابط-مستودع-GitHub>`؛ لم يتم إنشاء مستودع أو رفع هذا المشروع إلى GitHub من هنا.
+- Node.js 22 or newer
+- Python 3.11
+- FFmpeg
+- pnpm and the project packages
+- A local Python environment with WhisperX and the worker dependencies
+
+If `winget` is unavailable, install the prerequisites above manually, reopen your terminal, and run `setup.cmd` again.
+
+The setup script checks for `nvidia-smi`. If it is available, setup installs CUDA-enabled PyTorch; otherwise, it installs the CPU build. CPU transcription works but can be much slower, especially for long recordings.
+
+## First run and model downloads
+
+On first use, SmartCutter downloads WhisperX `large-v3` and the required alignment model. Model files are cached under:
+
+```text
+%LOCALAPPDATA%\SmartCutter\huggingface
+```
+
+The initial download requires an internet connection and enough free disk space. Later runs use the cached models. The `large-v3` model can require substantial memory; an NVIDIA GPU is recommended for faster processing.
+
+## Using the terminal workflow
+
+After `run.cmd` starts, choose an option from the text menu.
+
+### Transcribe audio or video
+
+1. Enter the path to a media file. You can paste paths that contain spaces.
+2. Choose automatic language detection or enter a language code.
+3. Wait for local transcription and forced alignment to finish.
+4. Copy the timestamped transcript, or save it as TXT, JSON, or both.
+
+TXT output uses timestamped segments, for example:
+
+```text
+[0:00] The first sentence begins here.
+[0:05] The next sentence starts after a pause.
+```
+
+JSON output contains `language`, `duration`, `segments`, and `word_segments`.
+
+### Prepare an MP4
+
+Provide a media file, a timestamped TXT script, and image paths in the order you want to use them. Review the proposed timeline and adjust a line's timing or image assignment before rendering. FFmpeg is required for media processing and MP4 creation.
+
+## Local processing and privacy
+
+- Inference and forced alignment run through the local WhisperX worker.
+- Your media is not sent to a cloud transcription service by this terminal workflow.
+- Model files are downloaded the first time they are needed; after that, they are read from the local cache.
+- No paid transcription API or API key is needed. Check the license terms for the software and model weights you use.
+
+## Project layout
+
+| Path | Purpose |
+| --- | --- |
+| `scripts/` | Windows terminal workflow |
+| `workers/local-whisperx/` | Local WhisperX transcription and alignment worker |
+| `artifacts/api-server/` | SmartCutter API server |
+| `artifacts/smartcutter/` | Existing browser-based SmartCutter interface |
+
+The browser interface remains part of the repository. `run.cmd` and `run.ps1` start the local terminal workflow; they do not open the browser interface.
+
+## Troubleshooting
+
+- **`winget` is not found:** Install App Installer from the Microsoft Store, or install the prerequisites manually.
+- **The model is still loading:** The first run downloads large model files. Keep the terminal open and check your internet connection and available disk space.
+- **Transcription is slow:** Confirm that the NVIDIA driver is installed and `nvidia-smi` works before running setup. Otherwise, SmartCutter uses CPU mode.
+- **Video processing fails:** Confirm FFmpeg is available in your terminal by running `ffmpeg -version`.
+
+## Repository
+
+[View SmartCutter on GitHub](https://github.com/xmdxsnd-debug/SmartCutter)
