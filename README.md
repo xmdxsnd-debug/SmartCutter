@@ -7,8 +7,8 @@
 1. ثبّت Git، ثم استنسخ المستودع وافتح مجلده:
 
    ```powershell
-   git clone <رابط-مستودع-GitHub>
-   cd <اسم-المجلد>
+   git clone https://github.com/xmdxsnd-debug/SmartCutter.git
+   cd SmartCutter
    ```
 
 2. شغّل الإعداد مرة واحدة:
