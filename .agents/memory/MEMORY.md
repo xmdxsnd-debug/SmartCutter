@@ -1,1 +1,2 @@
 - [SmartCutter alignment confidence](smartcutter-alignment.md) — Waveform fallback is approximate; low-confidence rows must remain reviewable and block export.
+- [GitHub provider proxy](github-provider-proxy.md) — Replit Git remotes may use an internal host; verify the real GitHub URL and visibility through authenticated metadata.
